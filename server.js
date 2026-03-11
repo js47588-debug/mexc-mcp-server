@@ -13,10 +13,20 @@ const {
 } = process.env;
 
 function requireAuth(req, res) {
-  const token = req.header("x-mcp-token");
+  const auth = req.header("authorization") || "";
+  const tokenFromBearer = auth.toLowerCase().startsWith("bearer ")
+    ? auth.slice(7).trim()
+    : null;
+
+  const tokenFromHeader = req.header("x-mcp-token");
+  const token = tokenFromBearer || tokenFromHeader;
+
   if (!MCP_TOKEN || token !== MCP_TOKEN) {
     res.status(401).json({ error: "Unauthorized" });
     return false;
+  }
+  return true;
+}
   }
   return true;
 }
@@ -74,6 +84,28 @@ async function mexcSignedGet(path, params = {}) {
   if (!r.ok) throw new Error(`MEXC ${r.status}: ${text}`);
   return JSON.parse(text);
 }
+
+function sseHandler(req, res) {
+  if (!requireAuth(req, res)) return;
+
+  res.status(200);
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+
+  res.write(`event: ready\ndata: {}\n\n`);
+
+  const interval = setInterval(() => {
+    res.write(`event: ping\ndata: {}\n\n`);
+  }, 25000);
+
+  req.on("close", () => clearInterval(interval));
+}
+
+app.get("/sse", sseHandler);
+app.get("/mcp/sse", sseHandler);
+app.get("/mcp", sseHandler);
+
 
 // List tools
 app.get("/tools", (req, res) => {
@@ -137,4 +169,5 @@ app.get("/health", (req, res) => res.json({ ok: true }));
 
 app.listen(PORT, () => {
   console.log(`MEXC MCP server listening on port ${PORT}`);
+
 });
